@@ -6,6 +6,8 @@ import { autoUpdater } from 'electron-updater'
 import log from 'electron-log'
 import { registerIpcHandlers } from './ipc-handlers'
 
+const RELEASES_URL = process.env.RELEASES_URL || 'https://github.com/ungurenko/agent_vibes/releases/latest'
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -19,7 +21,7 @@ function createWindow(): void {
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true,
       nodeIntegration: false,
       contextIsolation: true
     }
@@ -68,8 +70,6 @@ app.whenReady().then(() => {
 
   // Auto-updates (only in production)
   if (!is.dev) {
-    const releasesUrl = 'https://github.com/ungurenko/agent_vibes/releases/latest'
-
     autoUpdater.logger = log
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
@@ -104,7 +104,7 @@ app.whenReady().then(() => {
         })
         .then((result) => {
           if (result.response === 0) {
-            shell.openExternal(releasesUrl)
+            shell.openExternal(RELEASES_URL)
           }
         })
     })

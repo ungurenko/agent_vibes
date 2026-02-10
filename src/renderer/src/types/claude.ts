@@ -80,6 +80,8 @@ export interface ChatMessage {
   attachedImages?: AttachedImage[]
   timestamp: Date
   isStreaming?: boolean
+  isPlan?: boolean
+  planStatus?: PlanStatus
 }
 
 export interface ToolUseInfo {
@@ -89,6 +91,8 @@ export interface ToolUseInfo {
   result?: string
   status: 'running' | 'done' | 'error'
 }
+
+export type PlanStatus = 'pending' | 'approved' | 'rejected'
 
 export type SessionStatus = 'idle' | 'thinking' | 'executing' | 'done' | 'error'
 

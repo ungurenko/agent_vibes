@@ -35,7 +35,7 @@ const dialogAPI = {
   selectFolder: (): Promise<string | null> => {
     return ipcRenderer.invoke('dialog:selectFolder')
   },
-  selectImages: (): Promise<unknown[] | null> => {
+  selectImages: (): Promise<{ id: string; path: string; name: string; type: 'file' }[] | null> => {
     return ipcRenderer.invoke('dialog:selectImages')
   }
 }
@@ -143,20 +143,5 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore
-  window.electron = electronAPI
-  // @ts-ignore
-  window.claude = claudeAPI
-  // @ts-ignore
-  window.dialog = dialogAPI
-  // @ts-ignore
-  window.sessions = sessionsAPI
-  // @ts-ignore
-  window.settings = settingsAPI
-  // @ts-ignore
-  window.data = dataAPI
-  // @ts-ignore
-  window.fs = fsAPI
-  // @ts-ignore
-  window.cli = cliAPI
+  throw new Error('Context isolation is disabled. This is a security misconfiguration — the app requires contextIsolation: true.')
 }

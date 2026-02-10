@@ -7,8 +7,27 @@ import type {
   AssistantMessageEvent,
   SystemInitEvent,
   ResultEvent,
-  AttachedImage
+  AttachedImage,
+  PlanStatus
 } from '@/types/claude'
+
+const PLAN_MODE_INSTRUCTION = [
+  'CRITICAL INSTRUCTION — PLAN MODE IS ACTIVE.',
+  '',
+  'You MUST only create a detailed implementation plan. You are FORBIDDEN from:',
+  '- Writing or editing any files',
+  '- Using Write, Edit, or any file-modification tools',
+  '- Running Bash commands that modify the filesystem',
+  '',
+  'Instead, you MUST:',
+  '1. Analyze the request thoroughly',
+  '2. List all files that would need to be changed',
+  '3. Describe each change in detail',
+  '4. Provide code snippets showing proposed changes',
+  '5. Note any dependencies or sequencing requirements',
+  '',
+  'Format as a clear numbered list. User will review and approve before changes.'
+].join('\n')
 
 interface SessionSnapshot {
   messages: ChatMessage[]
@@ -25,6 +44,7 @@ export function useClaude() {
   const [totalCost, setTotalCost] = useState(0)
   const [currentTools, setCurrentTools] = useState<ToolUseInfo[]>([])
 
+  const pendingPlanRef = useRef(false)
   const sessionsCacheRef = useRef(new Map<string, SessionSnapshot>())
   const appSessionIdRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -117,17 +137,19 @@ export function useClaude() {
               ]
             }
             // Otherwise create a new assistant message
-            return [
-              ...prev,
-              {
-                id: assistantEvent.message?.id || crypto.randomUUID(),
-                role: 'assistant',
-                content: textContent,
-                isStreaming: true,
-                timestamp: new Date(),
-                toolUse: tools.length > 0 ? tools : undefined
-              }
-            ]
+            const newMsg: ChatMessage = {
+              id: assistantEvent.message?.id || crypto.randomUUID(),
+              role: 'assistant',
+              content: textContent,
+              isStreaming: true,
+              timestamp: new Date(),
+              toolUse: tools.length > 0 ? tools : undefined
+            }
+            if (pendingPlanRef.current) {
+              newMsg.isPlan = true
+              newMsg.planStatus = 'pending'
+            }
+            return [...prev, newMsg]
           })
         }
 
@@ -141,6 +163,7 @@ export function useClaude() {
       // result — mark completion, update cost
       if (event.type === 'result') {
         const resultEvent = event as ResultEvent
+        pendingPlanRef.current = false
         setStatus(resultEvent.subtype === 'success' ? 'done' : 'error')
         setTotalCost(resultEvent.total_cost_usd || 0)
         setCurrentTools([])
@@ -176,6 +199,7 @@ export function useClaude() {
 
     const unsubComplete = window.claude.onComplete(() => {
       // Reset status if still in a processing state
+      pendingPlanRef.current = false
       setStatus((prev) => (prev === 'thinking' || prev === 'executing' ? 'done' : prev))
       setCurrentTools([])
 
@@ -197,7 +221,14 @@ export function useClaude() {
   }, [])
 
   const sendMessage = useCallback(
-    (prompt: string, projectDir: string, attachedImages?: AttachedImage[], model?: string, systemPrompt?: string) => {
+    (prompt: string, projectDir: string, attachedImages?: AttachedImage[], model?: string, systemPrompt?: string, isPlanMode?: boolean) => {
+      // Auto-reject any pending plans when sending a new message
+      setMessages(prev => prev.map(msg =>
+        msg.isPlan && msg.planStatus === 'pending'
+          ? { ...msg, planStatus: 'rejected' as PlanStatus }
+          : msg
+      ))
+
       // Build CLI prompt with image paths if images are attached
       let cliPrompt = prompt
       if (attachedImages && attachedImages.length > 0) {
@@ -207,6 +238,14 @@ export function useClaude() {
         const suffix = `\n\nAttached images:\n${imageLines.join('\n')}`
         cliPrompt = prompt ? prompt + suffix : `Please analyze the following images:\n\nAttached images:\n${imageLines.join('\n')}`
       }
+
+      // Plan mode: set flag and append instruction to system prompt
+      if (isPlanMode) {
+        pendingPlanRef.current = true
+      }
+      const effectiveSystemPrompt = isPlanMode
+        ? (systemPrompt ? systemPrompt + '\n\n' + PLAN_MODE_INSTRUCTION : PLAN_MODE_INSTRUCTION)
+        : systemPrompt
 
       // Add user message to chat (with original prompt and images for display)
       setMessages((prev) => [
@@ -220,7 +259,7 @@ export function useClaude() {
         }
       ])
       setStatus('thinking')
-      window.claude.execute(cliPrompt, projectDir, sessionId || undefined, model, systemPrompt)
+      window.claude.execute(cliPrompt, projectDir, sessionId || undefined, model, effectiveSystemPrompt)
     },
     [sessionId]
   )
@@ -339,6 +378,43 @@ export function useClaude() {
     sessionsCacheRef.current.clear()
   }, [])
 
+  const approvePlan = useCallback(
+    (messageId: string, projectDir: string, model?: string, systemPrompt?: string) => {
+      // Mark plan as approved
+      setMessages(prev => prev.map(msg =>
+        msg.id === messageId ? { ...msg, planStatus: 'approved' as PlanStatus } : msg
+      ))
+
+      // Add user message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'user' as const,
+          content: 'Одобрить и выполнить план',
+          timestamp: new Date()
+        }
+      ])
+
+      // Execute without plan mode instructions
+      setStatus('thinking')
+      window.claude.execute(
+        'Plan approved. Proceed with implementation.',
+        projectDir,
+        sessionId || undefined,
+        model,
+        systemPrompt
+      )
+    },
+    [sessionId]
+  )
+
+  const rejectPlan = useCallback((messageId: string) => {
+    setMessages(prev => prev.map(msg =>
+      msg.id === messageId ? { ...msg, planStatus: 'rejected' as PlanStatus } : msg
+    ))
+  }, [])
+
   const resetStatusToIdle = useCallback(() => {
     setStatus((prev) => (prev === 'done' ? 'idle' : prev))
   }, [])
@@ -355,6 +431,8 @@ export function useClaude() {
     switchSession,
     removeSessionCache,
     clearAllCache,
-    resetStatusToIdle
+    resetStatusToIdle,
+    approvePlan,
+    rejectPlan
   }
 }

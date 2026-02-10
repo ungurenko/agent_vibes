@@ -18,7 +18,8 @@ function loadAll(): SettingsMap {
     if (!fs.existsSync(p)) return {}
     const raw = fs.readFileSync(p, 'utf-8')
     return JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    console.warn('[settings] Failed to load settings:', (err as Error).message)
     return {}
   }
 }

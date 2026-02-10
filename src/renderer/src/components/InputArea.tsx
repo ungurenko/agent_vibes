@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion } from 'motion/react'
-import { ArrowUp, Square, Paperclip } from 'lucide-react'
+import { ArrowUp, Square, Paperclip, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ImagePreview } from '@/components/ImagePreview'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -13,13 +13,15 @@ interface InputAreaProps {
   isProcessing: boolean
   onStop: () => void
   onSelectProject?: () => void
+  planModeEnabled: boolean
+  onTogglePlanMode: () => void
 }
 
 const MAX_ROWS = 6
 const LINE_HEIGHT = 20
 const PADDING_Y = 20
 
-export function InputArea({ onSend, disabled, isProcessing, onStop, onSelectProject }: InputAreaProps): JSX.Element {
+export function InputArea({ onSend, disabled, isProcessing, onStop, onSelectProject, planModeEnabled, onTogglePlanMode }: InputAreaProps): JSX.Element {
   const [value, setValue] = useState('')
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -113,7 +115,24 @@ export function InputArea({ onSend, disabled, isProcessing, onStop, onSelectProj
             <ImagePreview images={attachedImages} onRemove={handleRemoveImage} />
           </div>
         )}
-        <div className="flex items-end gap-2">
+        <div className="flex items-center gap-2">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            className={cn(
+              'flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all',
+              planModeEnabled
+                ? 'bg-amber-500/15 text-amber-500 ring-1 ring-amber-500/30 shadow-sm shadow-amber-500/10'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted ring-1 ring-transparent hover:ring-border/50',
+              (disabled && !isProcessing) && 'opacity-50 cursor-not-allowed'
+            )}
+            disabled={disabled && !isProcessing}
+            onClick={onTogglePlanMode}
+            aria-label={planModeEnabled ? 'Выключить режим плана' : 'Включить режим плана'}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            План
+          </motion.button>
           <Tooltip>
             <TooltipTrigger asChild>
               <motion.button
@@ -140,7 +159,7 @@ export function InputArea({ onSend, disabled, isProcessing, onStop, onSelectProj
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={disabled ? '' : 'Введите сообщение...'}
+              placeholder={disabled ? '' : planModeEnabled ? 'Опишите задачу — Claude составит план...' : 'Введите сообщение...'}
               disabled={disabled && !isProcessing}
               rows={1}
               className={cn(

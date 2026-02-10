@@ -19,7 +19,7 @@ import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import type { ModelAlias, AttachedImage } from '@/types/claude'
 
 export function App(): JSX.Element {
-  const { messages, status, totalCost, currentTools, sendMessage, stopGeneration, switchSession, removeSessionCache, clearAllCache, resetStatusToIdle } =
+  const { messages, status, totalCost, currentTools, sendMessage, stopGeneration, switchSession, removeSessionCache, clearAllCache, resetStatusToIdle, approvePlan, rejectPlan } =
     useClaude()
   const { projectDir, projectName, selectProject, setProjectDir } = useProject()
   const { theme, setTheme } = useTheme()
@@ -27,6 +27,7 @@ export function App(): JSX.Element {
   const { sessions, activeSessionId, addSession, updateSession, removeSession, selectSession, clearAllSessions } =
     useSessions()
   const { onboardingDone, completeOnboarding } = useOnboarding()
+  const [planModeEnabled, setPlanModeEnabled] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [model, setModel] = useState<ModelAlias>(() => settings.model.default)
@@ -70,9 +71,9 @@ export function App(): JSX.Element {
         })
       }
 
-      sendMessage(text, projectDir, images.length > 0 ? images : undefined, model, settings.model.systemPrompt || undefined)
+      sendMessage(text, projectDir, images.length > 0 ? images : undefined, model, settings.model.systemPrompt || undefined, planModeEnabled)
     },
-    [projectDir, sendMessage, model, activeSessionId, addSession, updateSession, switchSession, projectName, messages.length, totalCost, onboardingDone, completeOnboarding, settings.model.systemPrompt]
+    [projectDir, sendMessage, model, activeSessionId, addSession, updateSession, switchSession, projectName, messages.length, totalCost, onboardingDone, completeOnboarding, settings.model.systemPrompt, planModeEnabled]
   )
 
   const handleSuggestion = useCallback(
@@ -83,7 +84,17 @@ export function App(): JSX.Element {
     [projectDir, handleSend]
   )
 
+  const handleApprovePlan = useCallback((messageId: string) => {
+    if (!projectDir) return
+    approvePlan(messageId, projectDir, model, settings.model.systemPrompt || undefined)
+  }, [projectDir, approvePlan, model, settings.model.systemPrompt])
+
+  const handleRejectPlan = useCallback((messageId: string) => {
+    rejectPlan(messageId)
+  }, [rejectPlan])
+
   const handleNewChat = useCallback(() => {
+    setPlanModeEnabled(false)
     switchSession(null)
     selectSession(null)
   }, [switchSession, selectSession])
@@ -195,6 +206,9 @@ export function App(): JSX.Element {
               status={status}
               projectName={projectName}
               onSuggestion={handleSuggestion}
+              onApprovePlan={handleApprovePlan}
+              onRejectPlan={handleRejectPlan}
+              isProcessing={isProcessing}
             />
 
             {/* Tool activity overlay */}
@@ -213,6 +227,8 @@ export function App(): JSX.Element {
               isProcessing={isProcessing}
               onStop={stopGeneration}
               onSelectProject={selectProject}
+              planModeEnabled={planModeEnabled}
+              onTogglePlanMode={() => setPlanModeEnabled(prev => !prev)}
             />
           </div>
 

@@ -12,6 +12,9 @@ interface ChatWindowProps {
   status: SessionStatus
   projectName?: string | null
   onSuggestion?: (text: string) => void
+  onApprovePlan?: (messageId: string) => void
+  onRejectPlan?: (messageId: string) => void
+  isProcessing?: boolean
 }
 
 function TypingIndicator(): JSX.Element {
@@ -36,7 +39,10 @@ export function ChatWindow({
   messages,
   status,
   projectName,
-  onSuggestion
+  onSuggestion,
+  onApprovePlan,
+  onRejectPlan,
+  isProcessing
 }: ChatWindowProps): JSX.Element {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -101,7 +107,13 @@ export function ChatWindow({
         <div className={cn('mx-auto flex w-full flex-col gap-4 px-4 py-6', contentWidthMap[settings.chat.maxContentWidth])}>
           <AnimatePresence mode="popLayout">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                onApprovePlan={onApprovePlan}
+                onRejectPlan={onRejectPlan}
+                isProcessing={isProcessing}
+              />
             ))}
           </AnimatePresence>
 

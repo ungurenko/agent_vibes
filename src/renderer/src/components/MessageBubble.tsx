@@ -3,7 +3,8 @@ import { motion } from 'motion/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
-import { Copy, Check } from 'lucide-react'
+import DOMPurify from 'dompurify'
+import { Copy, Check, ClipboardList, CheckCircle2, XCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { getHighlighter } from '@/lib/shiki'
@@ -25,6 +26,9 @@ const codeFontSizeMap = {
 
 interface MessageBubbleProps {
   message: ChatMessage
+  onApprovePlan?: (messageId: string) => void
+  onRejectPlan?: (messageId: string) => void
+  isProcessing?: boolean
 }
 
 function formatTime(date: Date): string {
@@ -73,7 +77,7 @@ function ShikiCodeBlock({
         <div
           ref={preRef}
           className={cn('overflow-x-auto rounded-lg [&>pre]:p-4 [&>pre]:!bg-background-tertiary', codeFontSize)}
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
         />
       ) : (
         <pre className={cn('overflow-x-auto rounded-lg bg-background-tertiary p-4', codeFontSize)}>
@@ -97,7 +101,7 @@ function ShikiCodeBlock({
   )
 }
 
-export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
+export function MessageBubble({ message, onApprovePlan, onRejectPlan, isProcessing }: MessageBubbleProps): JSX.Element {
   const isUser = message.role === 'user'
   const [copied, setCopied] = useState(false)
   const { settings } = useSettings()
@@ -200,7 +204,11 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-      className={cn('group flex flex-col', isUser ? 'items-end' : 'items-start')}
+      className={cn(
+        'group flex flex-col',
+        isUser ? 'items-end' : 'items-start',
+        message.isPlan && message.planStatus === 'rejected' && 'opacity-60'
+      )}
     >
       <div className="relative">
         <div
@@ -209,9 +217,33 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
             fontSize,
             isUser
               ? 'max-w-[80%] rounded-2xl rounded-br-md bg-gradient-to-br from-primary to-primary/90 text-primary-foreground shadow-xs'
-              : 'max-w-[85%] rounded-2xl rounded-bl-md border border-border/40 bg-card shadow-xs'
+              : 'max-w-[85%] rounded-2xl rounded-bl-md border border-border/40 bg-card shadow-xs',
+            message.isPlan && message.planStatus === 'approved' && 'border-l-2 border-l-green-500/60'
           )}
         >
+          {/* Plan badge */}
+          {message.isPlan && (
+            <div className="mb-2">
+              {message.planStatus === 'pending' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-500 ring-1 ring-inset ring-amber-500/30">
+                  <ClipboardList className="h-3 w-3" />
+                  План
+                </span>
+              )}
+              {message.planStatus === 'approved' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-500 ring-1 ring-inset ring-green-500/30">
+                  <CheckCircle2 className="h-3 w-3" />
+                  План одобрен
+                </span>
+              )}
+              {message.planStatus === 'rejected' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-500 ring-1 ring-inset ring-red-500/30">
+                  <XCircle className="h-3 w-3" />
+                  План отклонён
+                </span>
+              )}
+            </div>
+          )}
           {isUser && message.attachedImages && message.attachedImages.length > 0 && (
             <div className="mb-2">
               <ImagePreview images={message.attachedImages} compact />
@@ -230,6 +262,31 @@ export function MessageBubble({ message }: MessageBubbleProps): JSX.Element {
             <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-current align-text-bottom" />
           )}
         </div>
+
+        {/* Plan approval buttons */}
+        {message.isPlan && message.planStatus === 'pending' && !message.isStreaming && (
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-8 bg-green-600 text-white hover:bg-green-700"
+              disabled={isProcessing}
+              onClick={() => onApprovePlan?.(message.id)}
+            >
+              <Check className="mr-1.5 h-3.5 w-3.5" />
+              Одобрить и выполнить
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-muted-foreground hover:text-foreground"
+              disabled={isProcessing}
+              onClick={() => onRejectPlan?.(message.id)}
+            >
+              <X className="mr-1.5 h-3.5 w-3.5" />
+              Отклонить
+            </Button>
+          </div>
+        )}
 
         {/* Copy message button for assistant */}
         {!isUser && !message.isStreaming && (

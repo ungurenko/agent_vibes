@@ -8,6 +8,36 @@ import { getSetting, setSetting, getAllSettings, setAllSettings, resetSettings }
 
 const manager = new ClaudeManager()
 
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'])
+
+/** Paths selected via native dialog — allowed for getImageDataUrl */
+const allowedImagePaths = new Set<string>()
+
+function getTempImagesDir(): string {
+  return path.join(app.getPath('temp'), 'vibes-agent-images')
+}
+
+function isPathAllowedForImageRead(filePath: string): boolean {
+  const resolved = path.resolve(filePath)
+  // Allow temp directory (clipboard images)
+  if (resolved.startsWith(getTempImagesDir())) return true
+  // Allow paths that were selected via native dialog
+  if (allowedImagePaths.has(resolved)) return true
+  return false
+}
+
+/** Filtered env vars for child processes — no secrets leak */
+function getSafeEnv(): NodeJS.ProcessEnv {
+  const keep = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'TMPDIR', 'XDG_RUNTIME_DIR', 'ANTHROPIC_API_KEY']
+  const env: NodeJS.ProcessEnv = {}
+  for (const key of keep) {
+    if (process.env[key] !== undefined) {
+      env[key] = process.env[key]
+    }
+  }
+  return env
+}
+
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Execute claude CLI with prompt
   ipcMain.on(
@@ -108,8 +138,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       for (const file of files) {
         try {
           fs.unlinkSync(path.join(sessionsDir, file))
-        } catch {
-          /* ignore */
+        } catch (err) {
+          console.warn('[data] Failed to delete session file:', file, (err as Error).message)
         }
       }
     }
@@ -122,6 +152,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // --- Filesystem ---
   ipcMain.handle('fs:pathExists', (_event, p: string) => {
+    // Only allow checking paths within home directory or temp
+    const resolved = path.resolve(p)
+    const homeDir = app.getPath('home')
+    const tempDir = app.getPath('temp')
+    if (!resolved.startsWith(homeDir) && !resolved.startsWith(tempDir)) {
+      return false
+    }
     return fs.existsSync(p)
   })
 
@@ -138,20 +175,29 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       return null
     }
 
-    return result.filePaths.map((filePath) => ({
-      id: crypto.randomUUID(),
-      path: filePath,
-      name: path.basename(filePath),
-      type: 'file' as const
-    }))
+    return result.filePaths.map((filePath) => {
+      allowedImagePaths.add(path.resolve(filePath))
+      return {
+        id: crypto.randomUUID(),
+        path: filePath,
+        name: path.basename(filePath),
+        type: 'file' as const
+      }
+    })
   })
 
   ipcMain.handle('fs:saveClipboardImage', (_event, buffer: Uint8Array, ext: string) => {
-    const tempDir = path.join(app.getPath('temp'), 'vibes-agent-images')
+    // Validate extension — allowlist only
+    const cleanExt = ext.replace(/^\./, '').toLowerCase()
+    if (!ALLOWED_IMAGE_EXTENSIONS.has(cleanExt)) {
+      throw new Error(`Unsupported image extension: ${ext}`)
+    }
+
+    const tempDir = getTempImagesDir()
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
-    const fileName = `clipboard-${Date.now()}.${ext}`
+    const fileName = `clipboard-${Date.now()}.${cleanExt}`
     const filePath = path.join(tempDir, fileName)
     fs.writeFileSync(filePath, Buffer.from(buffer))
     return {
@@ -163,21 +209,26 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle('fs:getImageDataUrl', (_event, filePath: string) => {
+    // Validate path — only allow temp images and dialog-selected files
+    if (!isPathAllowedForImageRead(filePath)) {
+      console.warn('[security] Blocked getImageDataUrl for path:', filePath)
+      return null
+    }
+
     if (!fs.existsSync(filePath)) return null
-    const data = fs.readFileSync(filePath)
     const ext = path.extname(filePath).slice(1).toLowerCase()
-    const mime =
-      ext === 'jpg' || ext === 'jpeg'
-        ? 'image/jpeg'
-        : ext === 'png'
-          ? 'image/png'
-          : ext === 'gif'
-            ? 'image/gif'
-            : ext === 'webp'
-              ? 'image/webp'
-              : ext === 'bmp'
-                ? 'image/bmp'
-                : 'image/png'
+    if (!ALLOWED_IMAGE_EXTENSIONS.has(ext)) return null
+
+    const data = fs.readFileSync(filePath)
+    const mimeMap: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      bmp: 'image/bmp'
+    }
+    const mime = mimeMap[ext] || 'image/png'
     return `data:${mime};base64,${data.toString('base64')}`
   })
 
@@ -185,10 +236,11 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('cli:checkInstalled', () => {
     try {
-      const cliPath = execSync('which claude', { encoding: 'utf-8' }).trim()
-      const version = execSync('claude --version', { encoding: 'utf-8' }).trim()
+      const cliPath = execSync('which claude', { encoding: 'utf-8', timeout: 5000 }).trim()
+      const version = execSync('claude --version', { encoding: 'utf-8', timeout: 5000 }).trim()
       return { installed: true, path: cliPath, version }
-    } catch {
+    } catch (err) {
+      console.warn('[cli] checkInstalled failed:', (err as Error).message)
       return { installed: false, path: null, version: null }
     }
   })
@@ -202,8 +254,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
 
     installProcess = spawn('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
-      shell: true,
-      env: { ...process.env }
+      env: getSafeEnv()
     })
 
     const timeout = setTimeout(() => {
@@ -256,8 +307,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           const accountInfo = [displayName, emailAddress].filter(Boolean).join(' — ') || null
           return { authenticated: true, accountInfo }
         }
-      } catch {
-        // Invalid JSON, ignore
+      } catch (err) {
+        console.warn('[cli] Failed to parse .claude.json:', (err as Error).message)
       }
     }
 
@@ -273,8 +324,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     }
 
     loginProcess = spawn('claude', [], {
-      shell: true,
-      env: { ...process.env }
+      env: getSafeEnv()
     })
 
     const timeout = setTimeout(() => {

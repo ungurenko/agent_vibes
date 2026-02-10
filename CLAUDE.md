@@ -4,6 +4,7 @@ Electron-приложение — визуальный GUI-wrapper для Claude
 
 ## Критические правила
 
+- **Один экземпляр приложения** — перед `npm run dev` ВСЕГДА убей предыдущие процессы: `pkill -f "electron-vite"; pkill -f "Electron"`, подожди 1 сек, и только потом запускай. Никогда не запускай `npm run dev` несколько раз подряд или параллельно
 - **НЕ трогай `node_modules/`** — только `npm install` для зависимостей
 - **Preload bridge** — единственный мост между main и renderer. Новые IPC-каналы добавляются в 3 файла: `preload/index.ts`, `ipc-handlers.ts`, `types/global.d.ts`
 - **contextIsolation: true** — прямой доступ к Node.js из renderer запрещён

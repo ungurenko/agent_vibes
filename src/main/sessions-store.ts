@@ -21,6 +21,13 @@ interface SessionMeta {
 }
 
 const MAX_SESSIONS = 100
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]+$/
+
+function validateSessionId(id: string): void {
+  if (!SESSION_ID_RE.test(id)) {
+    throw new Error(`Invalid session ID: ${id}`)
+  }
+}
 
 function getSessionsDir(): string {
   const dir = path.join(app.getPath('home'), '.vibes-agent', 'sessions')
@@ -44,7 +51,8 @@ function loadMeta(): SessionMeta[] {
     if (!fs.existsSync(metaPath)) return []
     const raw = fs.readFileSync(metaPath, 'utf-8')
     return JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    console.warn('[sessions] Failed to load meta:', (err as Error).message)
     return []
   }
 }
@@ -57,6 +65,7 @@ export function saveSession(
   id: string,
   data: SessionData & { title?: string; projectName?: string }
 ): void {
+  validateSessionId(id)
   const sessionsDir = getSessionsDir()
   const filePath = path.join(sessionsDir, `${id}.json`)
 
@@ -96,8 +105,8 @@ export function saveSession(
       const fp = path.join(sessionsDir, `${r.id}.json`)
       try {
         fs.unlinkSync(fp)
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.warn('[sessions] Failed to delete old session:', r.id, (err as Error).message)
       }
     }
   }
@@ -106,12 +115,14 @@ export function saveSession(
 }
 
 export function loadSession(id: string): SessionData | null {
+  validateSessionId(id)
   try {
     const filePath = path.join(getSessionsDir(), `${id}.json`)
     if (!fs.existsSync(filePath)) return null
     const raw = fs.readFileSync(filePath, 'utf-8')
     return JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    console.warn('[sessions] Failed to load session:', id, (err as Error).message)
     return null
   }
 }
@@ -121,12 +132,13 @@ export function listSessions(): SessionMeta[] {
 }
 
 export function deleteSession(id: string): void {
+  validateSessionId(id)
   const sessionsDir = getSessionsDir()
   const filePath = path.join(sessionsDir, `${id}.json`)
   try {
     fs.unlinkSync(filePath)
-  } catch {
-    /* ignore */
+  } catch (err) {
+    console.warn('[sessions] Failed to delete session file:', id, (err as Error).message)
   }
 
   const meta = loadMeta()
