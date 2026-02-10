@@ -12,8 +12,6 @@ interface ChatWindowProps {
   status: SessionStatus
   projectName?: string | null
   onSuggestion?: (text: string) => void
-  showOnboarding?: boolean
-  onSelectProject?: () => void
 }
 
 function TypingIndicator(): JSX.Element {
@@ -38,9 +36,7 @@ export function ChatWindow({
   messages,
   status,
   projectName,
-  onSuggestion,
-  showOnboarding,
-  onSelectProject
+  onSuggestion
 }: ChatWindowProps): JSX.Element {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -91,8 +87,6 @@ export function ChatWindow({
       <WelcomeScreen
         projectName={projectName ?? null}
         onSuggestion={onSuggestion ?? (() => {})}
-        showOnboarding={showOnboarding}
-        onSelectProject={onSelectProject}
       />
     )
   }

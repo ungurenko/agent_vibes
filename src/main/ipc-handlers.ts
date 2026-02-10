@@ -1,4 +1,5 @@
 import { ipcMain, dialog, BrowserWindow, app } from 'electron'
+import { execSync, spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import { ClaudeManager } from './claude-manager'
@@ -178,5 +179,131 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                 ? 'image/bmp'
                 : 'image/png'
     return `data:${mime};base64,${data.toString('base64')}`
+  })
+
+  // --- CLI check/install/auth ---
+
+  ipcMain.handle('cli:checkInstalled', () => {
+    try {
+      const cliPath = execSync('which claude', { encoding: 'utf-8' }).trim()
+      const version = execSync('claude --version', { encoding: 'utf-8' }).trim()
+      return { installed: true, path: cliPath, version }
+    } catch {
+      return { installed: false, path: null, version: null }
+    }
+  })
+
+  let installProcess: ChildProcess | null = null
+
+  ipcMain.on('cli:install', (event) => {
+    if (installProcess) {
+      installProcess.kill()
+      installProcess = null
+    }
+
+    installProcess = spawn('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
+      shell: true,
+      env: { ...process.env }
+    })
+
+    const timeout = setTimeout(() => {
+      if (installProcess) {
+        installProcess.kill()
+        installProcess = null
+        event.sender.send('cli:install:complete', {
+          success: false,
+          error: 'Installation timed out after 5 minutes'
+        })
+      }
+    }, 5 * 60 * 1000)
+
+    installProcess.stdout?.on('data', (data: Buffer) => {
+      event.sender.send('cli:install:progress', data.toString())
+    })
+
+    installProcess.stderr?.on('data', (data: Buffer) => {
+      event.sender.send('cli:install:progress', data.toString())
+    })
+
+    installProcess.on('close', (code) => {
+      clearTimeout(timeout)
+      installProcess = null
+      event.sender.send('cli:install:complete', {
+        success: code === 0,
+        error: code !== 0 ? `Process exited with code ${code}` : undefined
+      })
+    })
+
+    installProcess.on('error', (err) => {
+      clearTimeout(timeout)
+      installProcess = null
+      event.sender.send('cli:install:complete', {
+        success: false,
+        error: err.message
+      })
+    })
+  })
+
+  ipcMain.handle('cli:checkAuth', () => {
+    const homeDir = app.getPath('home')
+    const claudeJson = path.join(homeDir, '.claude.json')
+
+    if (fs.existsSync(claudeJson)) {
+      try {
+        const content = JSON.parse(fs.readFileSync(claudeJson, 'utf-8'))
+        if (content.oauthAccount) {
+          const { displayName, emailAddress } = content.oauthAccount
+          const accountInfo = [displayName, emailAddress].filter(Boolean).join(' — ') || null
+          return { authenticated: true, accountInfo }
+        }
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
+
+    return { authenticated: false, accountInfo: null }
+  })
+
+  let loginProcess: ChildProcess | null = null
+
+  ipcMain.on('cli:login', (event) => {
+    if (loginProcess) {
+      loginProcess.kill()
+      loginProcess = null
+    }
+
+    loginProcess = spawn('claude', [], {
+      shell: true,
+      env: { ...process.env }
+    })
+
+    const timeout = setTimeout(() => {
+      if (loginProcess) {
+        loginProcess.kill()
+        loginProcess = null
+        event.sender.send('cli:login:complete', { success: false })
+      }
+    }, 3 * 60 * 1000)
+
+    loginProcess.stdout?.on('data', (data: Buffer) => {
+      event.sender.send('cli:login:progress', data.toString())
+    })
+
+    loginProcess.stderr?.on('data', (data: Buffer) => {
+      event.sender.send('cli:login:progress', data.toString())
+    })
+
+    loginProcess.on('close', (code) => {
+      clearTimeout(timeout)
+      loginProcess = null
+      event.sender.send('cli:login:complete', { success: code === 0 })
+    })
+
+    loginProcess.on('error', (err) => {
+      clearTimeout(timeout)
+      loginProcess = null
+      event.sender.send('cli:login:progress', `Error: ${err.message}`)
+      event.sender.send('cli:login:complete', { success: false })
+    })
   })
 }

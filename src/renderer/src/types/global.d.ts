@@ -37,5 +37,15 @@ declare global {
       saveClipboardImage: (buffer: Uint8Array, ext: string) => Promise<AttachedImage>
       getImageDataUrl: (path: string) => Promise<string | null>
     }
+    cli: {
+      checkInstalled: () => Promise<{ installed: boolean; path: string | null; version: string | null }>
+      install: () => void
+      onInstallProgress: (callback: (data: string) => void) => () => void
+      onInstallComplete: (callback: (result: { success: boolean; error?: string }) => void) => () => void
+      checkAuth: () => Promise<{ authenticated: boolean; accountInfo: string | null }>
+      login: () => void
+      onLoginProgress: (callback: (data: string) => void) => () => void
+      onLoginComplete: (callback: (result: { success: boolean }) => void) => () => void
+    }
   }
 }

@@ -94,6 +94,41 @@ const fsAPI = {
   }
 }
 
+const cliAPI = {
+  checkInstalled: (): Promise<{ installed: boolean; path: string | null; version: string | null }> => {
+    return ipcRenderer.invoke('cli:checkInstalled')
+  },
+  install: (): void => {
+    ipcRenderer.send('cli:install')
+  },
+  onInstallProgress: (callback: (data: string) => void): (() => void) => {
+    const handler = (_: unknown, data: string): void => { callback(data) }
+    ipcRenderer.on('cli:install:progress', handler)
+    return () => ipcRenderer.removeListener('cli:install:progress', handler)
+  },
+  onInstallComplete: (callback: (result: { success: boolean; error?: string }) => void): (() => void) => {
+    const handler = (_: unknown, data: { success: boolean; error?: string }): void => { callback(data) }
+    ipcRenderer.on('cli:install:complete', handler)
+    return () => ipcRenderer.removeListener('cli:install:complete', handler)
+  },
+  checkAuth: (): Promise<{ authenticated: boolean; accountInfo: string | null }> => {
+    return ipcRenderer.invoke('cli:checkAuth')
+  },
+  login: (): void => {
+    ipcRenderer.send('cli:login')
+  },
+  onLoginProgress: (callback: (data: string) => void): (() => void) => {
+    const handler = (_: unknown, data: string): void => { callback(data) }
+    ipcRenderer.on('cli:login:progress', handler)
+    return () => ipcRenderer.removeListener('cli:login:progress', handler)
+  },
+  onLoginComplete: (callback: (result: { success: boolean }) => void): (() => void) => {
+    const handler = (_: unknown, data: { success: boolean }): void => { callback(data) }
+    ipcRenderer.on('cli:login:complete', handler)
+    return () => ipcRenderer.removeListener('cli:login:complete', handler)
+  }
+}
+
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
@@ -103,6 +138,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('settings', settingsAPI)
     contextBridge.exposeInMainWorld('data', dataAPI)
     contextBridge.exposeInMainWorld('fs', fsAPI)
+    contextBridge.exposeInMainWorld('cli', cliAPI)
   } catch (error) {
     console.error(error)
   }
@@ -121,4 +157,6 @@ if (process.contextIsolated) {
   window.data = dataAPI
   // @ts-ignore
   window.fs = fsAPI
+  // @ts-ignore
+  window.cli = cliAPI
 }

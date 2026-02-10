@@ -7,6 +7,28 @@
 
 ## [Unreleased]
 
+## 2026-02-10 — Onboarding wizard и исправление авторизации
+
+### Добавлено
+- Реализован пошаговый onboarding wizard (Step1CLI, Step2Auth, Step3Project, Step4Complete)
+- Добавлены IPC-каналы для проверки CLI (`cli:checkInstalled`), авторизации (`cli:checkAuth`), установки (`cli:install`) и входа (`cli:login`)
+- Добавлен preload bridge для onboarding (`window.cli`, `window.onboarding`)
+- Добавлен хук `useOnboarding` для управления состоянием wizard
+
+### Исправлено
+- Исправлена проверка авторизации: убран несуществующий `claude auth status`, заменён на чтение `~/.claude.json` с проверкой ключа `oauthAccount`
+- Исправлен fallback: убраны проверки несуществующих ключей (`oauthToken`, `apiKey`, `sessionKey`)
+- Исправлена команда входа: убран несуществующий `claude login`, заменён на `claude` без аргументов
+- Исправлена fallback-инструкция в UI: `claude login` → `claude`
+
+### Изменено
+- Переработан `App.tsx` для интеграции onboarding wizard перед основным интерфейсом
+- Обновлён `ChatWindow.tsx` для поддержки состояния onboarding
+- Обновлён `WelcomeScreen.tsx` для интеграции с новым flow
+
+### Удалено
+- Удалён устаревший компонент `OnboardingWelcome.tsx`
+
 ## [1.0.0] - 2026-02-10
 
 ### Added

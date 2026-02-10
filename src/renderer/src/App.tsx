@@ -15,6 +15,7 @@ import { InputArea } from '@/components/InputArea'
 import { ToolActivity } from '@/components/ToolActivity'
 import { StatusBar } from '@/components/StatusBar'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
+import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import type { ModelAlias, AttachedImage } from '@/types/claude'
 
 export function App(): JSX.Element {
@@ -143,7 +144,20 @@ export function App(): JSX.Element {
     isProcessing
   })
 
-  const showOnboarding = !projectDir && !onboardingDone
+  const showOnboarding = !onboardingDone
+
+  if (showOnboarding) {
+    return (
+      <MotionConfig reducedMotion="user">
+        <OnboardingWizard
+          onComplete={(path) => {
+            setProjectDir(path)
+            completeOnboarding()
+          }}
+        />
+      </MotionConfig>
+    )
+  }
 
   return (
     <MotionConfig reducedMotion="user">
@@ -181,8 +195,6 @@ export function App(): JSX.Element {
               status={status}
               projectName={projectName}
               onSuggestion={handleSuggestion}
-              showOnboarding={showOnboarding}
-              onSelectProject={selectProject}
             />
 
             {/* Tool activity overlay */}

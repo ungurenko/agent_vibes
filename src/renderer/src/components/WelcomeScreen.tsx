@@ -1,12 +1,9 @@
 import { motion } from 'motion/react'
 import { Sparkles, LayoutGrid, ListTodo, Bug, Zap } from 'lucide-react'
-import { OnboardingWelcome } from '@/components/OnboardingWelcome'
 
 interface WelcomeScreenProps {
   projectName: string | null
   onSuggestion: (text: string) => void
-  showOnboarding?: boolean
-  onSelectProject?: () => void
 }
 
 const suggestions = [
@@ -37,14 +34,8 @@ const suggestions = [
 
 export function WelcomeScreen({
   projectName,
-  onSuggestion,
-  showOnboarding,
-  onSelectProject
+  onSuggestion
 }: WelcomeScreenProps): JSX.Element {
-  if (showOnboarding && onSelectProject) {
-    return <OnboardingWelcome onSelectProject={onSelectProject} />
-  }
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
