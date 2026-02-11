@@ -1,0 +1,320 @@
+import { useCallback, useRef, useState, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import type { Components } from 'react-markdown'
+import DOMPurify from 'dompurify'
+import { Copy, Check, ClipboardList, CheckCircle2, XCircle, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { getHighlighter } from '@/lib/shiki'
+import { ImagePreview } from '@/components/ImagePreview'
+import { useSettings } from '@/hooks/useSettings'
+import type { ChatMessage } from '@/types/claude'
+
+const fontSizeMap = {
+  small: 'text-xs',
+  medium: 'text-sm',
+  large: 'text-base'
+} as const
+
+const codeFontSizeMap = {
+  small: 'text-xs',
+  medium: 'text-sm',
+  large: 'text-base'
+} as const
+
+interface MessageBubbleProps {
+  message: ChatMessage
+  onApprovePlan?: (messageId: string) => void
+  onRejectPlan?: (messageId: string) => void
+  isProcessing?: boolean
+}
+
+function formatTime(date: Date): string {
+  const d = date instanceof Date ? date : new Date(date)
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+function ShikiCodeBlock({
+  code,
+  language,
+  codeFontSize
+}: {
+  code: string
+  language: string
+  codeFontSize: string
+}): JSX.Element {
+  const [html, setHtml] = useState<string | null>(null)
+  const preRef = useRef<HTMLDivElement>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    getHighlighter().then((highlighter) => {
+      if (cancelled) return
+      const isDark = document.documentElement.classList.contains('dark')
+      const rendered = highlighter.codeToHtml(code, {
+        lang: language,
+        theme: isDark ? 'github-dark' : 'github-light'
+      })
+      setHtml(rendered)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [code, language])
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [code])
+
+  return (
+    <div className="group/code relative my-2">
+      {html ? (
+        <div
+          ref={preRef}
+          className={cn('overflow-x-auto rounded-lg [&>pre]:p-4 [&>pre]:!bg-background-tertiary', codeFontSize)}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
+        />
+      ) : (
+        <pre className={cn('overflow-x-auto rounded-lg bg-background-tertiary p-4', codeFontSize)}>
+          <code>{code}</code>
+        </pre>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute right-2 top-2 h-7 w-7 opacity-0 transition-opacity group-hover/code:opacity-100 focus:opacity-100 focus-visible:opacity-100 hover:bg-muted"
+        onClick={handleCopy}
+        aria-label={copied ? 'Скопировано' : 'Копировать код'}
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-green-500" />
+        ) : (
+          <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+      </Button>
+    </div>
+  )
+}
+
+export function MessageBubble({ message, onApprovePlan, onRejectPlan, isProcessing }: MessageBubbleProps): JSX.Element {
+  const isUser = message.role === 'user'
+  const [copied, setCopied] = useState(false)
+  const { settings } = useSettings()
+  const fontSize = fontSizeMap[settings.appearance.fontSize]
+  const codeFontSizeCls = codeFontSizeMap[settings.appearance.codeFontSize]
+
+  const handleCopyMessage = useCallback(() => {
+    navigator.clipboard.writeText(message.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [message.content])
+
+  const markdownComponents: Components = {
+    pre({ children }) {
+      return <>{children}</>
+    },
+    code({ className, children }) {
+      const match = /language-(\w+)/.exec(className || '')
+      const lang = match ? match[1] : null
+      const codeString = String(children).replace(/\n$/, '')
+
+      if (lang) {
+        return <ShikiCodeBlock code={codeString} language={lang} codeFontSize={codeFontSizeCls} />
+      }
+      return (
+        <code className={cn('rounded bg-muted px-1.5 py-0.5 font-mono', codeFontSizeCls)}>{children}</code>
+      )
+    },
+    p({ children, ...props }) {
+      return (
+        <p className="mb-2 last:mb-0" {...props}>
+          {children}
+        </p>
+      )
+    },
+    ul({ children, ...props }) {
+      return (
+        <ul className="mb-2 ml-4 list-disc last:mb-0" {...props}>
+          {children}
+        </ul>
+      )
+    },
+    ol({ children, ...props }) {
+      return (
+        <ol className="mb-2 ml-4 list-decimal last:mb-0" {...props}>
+          {children}
+        </ol>
+      )
+    },
+    a({ children, href, ...props }) {
+      return (
+        <a
+          href={href}
+          className="text-primary underline underline-offset-2 hover:text-primary/80"
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+        >
+          {children}
+        </a>
+      )
+    },
+    blockquote({ children, ...props }) {
+      return (
+        <blockquote
+          className="mb-2 border-l-2 border-primary/30 pl-3 italic text-muted-foreground last:mb-0"
+          {...props}
+        >
+          {children}
+        </blockquote>
+      )
+    },
+    table({ children, ...props }) {
+      return (
+        <div className="mb-2 overflow-x-auto last:mb-0">
+          <table className="w-full border-collapse text-sm" {...props}>
+            {children}
+          </table>
+        </div>
+      )
+    },
+    th({ children, ...props }) {
+      return (
+        <th className="border border-border px-3 py-1.5 text-left font-semibold" {...props}>
+          {children}
+        </th>
+      )
+    },
+    td({ children, ...props }) {
+      return (
+        <td className="border border-border px-3 py-1.5" {...props}>
+          {children}
+        </td>
+      )
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        'group flex flex-col',
+        message.isPlan && message.planStatus === 'rejected' && 'opacity-60'
+      )}
+    >
+      <div
+        className={cn(
+          'relative whitespace-pre-wrap break-words px-4 py-2.5 leading-relaxed',
+          fontSize,
+          isUser
+            ? 'border-l-2 border-muted-foreground/20 bg-muted/30'
+            : '',
+          message.isPlan && message.planStatus === 'approved' && 'border-l-2 border-l-green-500/60'
+        )}
+      >
+        {/* Plan badge */}
+        {message.isPlan && (
+          <div className="mb-2">
+            {message.planStatus === 'pending' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-500 ring-1 ring-inset ring-amber-500/30">
+                <ClipboardList className="h-3 w-3" />
+                План
+              </span>
+            )}
+            {message.planStatus === 'approved' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-500 ring-1 ring-inset ring-green-500/30">
+                <CheckCircle2 className="h-3 w-3" />
+                План одобрен
+              </span>
+            )}
+            {message.planStatus === 'rejected' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-500 ring-1 ring-inset ring-red-500/30">
+                <XCircle className="h-3 w-3" />
+                План отклонён
+              </span>
+            )}
+          </div>
+        )}
+        {isUser && message.attachedImages && message.attachedImages.length > 0 && (
+          <div className="mb-2">
+            <ImagePreview images={message.attachedImages} compact />
+          </div>
+        )}
+        {isUser ? (
+          <span>{message.content}</span>
+        ) : (
+          <div className="prose-sm">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
+        {message.isStreaming && (
+          <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-current align-text-bottom" />
+        )}
+      </div>
+
+      {/* Plan approval buttons */}
+      {message.isPlan && message.planStatus === 'pending' && !message.isStreaming && (
+        <div className="mt-2 flex items-center gap-2 px-4">
+          <Button
+            size="sm"
+            className="h-8 bg-green-600 text-white hover:bg-green-700"
+            disabled={isProcessing}
+            onClick={() => onApprovePlan?.(message.id)}
+          >
+            <Check className="mr-1.5 h-3.5 w-3.5" />
+            Одобрить и выполнить
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-muted-foreground hover:text-foreground"
+            disabled={isProcessing}
+            onClick={() => onRejectPlan?.(message.id)}
+          >
+            <X className="mr-1.5 h-3.5 w-3.5" />
+            Отклонить
+          </Button>
+        </div>
+      )}
+
+      {/* Copy message button for assistant - inline */}
+      {!isUser && !message.isStreaming && (
+        <div className="mt-1 px-4 opacity-0 transition-opacity group-hover:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={handleCopyMessage}
+            aria-label={copied ? 'Скопировано' : 'Копировать сообщение'}
+          >
+            {copied ? (
+              <Check className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+              <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </Button>
+        </div>
+      )}
+
+      {settings.chat.showTimestamps !== 'never' && (
+        <span
+          className={cn(
+            'mt-1 px-4 text-xs text-muted-foreground transition-opacity',
+            settings.chat.showTimestamps === 'hover'
+              ? 'opacity-0 group-hover:opacity-100'
+              : 'opacity-100'
+          )}
+        >
+          {formatTime(message.timestamp)}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export default MessageBubble
